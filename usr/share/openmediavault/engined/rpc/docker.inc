@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2015 OpenMediaVault Plugin Developers
+ * Copyright (c) 2015-2016 OpenMediaVault Plugin Developers
  *
  * @category OMVRpcServiceDocker
  * @package  Openmediavault-docker-gui
@@ -22,12 +22,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require_once "openmediavault/object.inc";
-require_once "openmediavault/config.inc";
-require_once "openmediavault/error.inc";
-require_once "openmediavault/util.inc";
-require_once "openmediavault/rpcservice.inc";
-require_once "openmediavault/notify.inc";
+require_once "openmediavault/globals.inc";
+require_once "openmediavault/functions.inc";
 require_once "/usr/share/omvdocker/Utils.php";
 require_once "/usr/share/omvdocker/Image.php";
 
@@ -116,7 +112,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Get all Docker images
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -124,29 +120,23 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getImages($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED, $this->_getXpath()
-            );
-        }
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
-        $objects = array();
-        if ($settings['enabled']) {
-            if ($settings["showDanglingImages"]) {
+        $objects = [];
+        if ($settings->get('enabled')) {
+            if ($settings->get('showDanglingImages')) {
                 $incDangling = false;
             } else {
                 $incDangling = true;
             }
 
             $objects = OMVModuleDockerUtil::getImageList(
-                $settings['apiPort'],
+                $settings->get('apiPort'),
                 $incDangling
             );
         }
@@ -155,7 +145,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Pull a Docker image from the Docker Hub
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -163,19 +153,11 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function pullImage($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"repository": { "type" : "string" },' .
-            '"tag": { "type" : "string" }' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.pullimage");
 
         if (strcmp($params['tag'], "") === 0) {
             $params['tag'] = "latest";
@@ -197,12 +179,14 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 "outputfilename",
                 $bgOutputFilename
             );
-            $cmd = "docker pull \"" . $params['repository'] . ":" .
-                $params['tag'] . "\"";
+            $cmd = sprintf("docker pull \"%s:%s\"",
+                $params['repository'],
+                $params['tag']
+            );
             $this->exec($cmd, $output, $bgOutputFilename);
             $this->finalizeBgProcStatus($bgStatusFilename, $output);
 
-        } catch(Exception $e) {
+        } catch(\Exception $e) {
             $this->finalizeBgProcStatus($bgStatusFilename, "", $e);
             exit(1);
         }
@@ -210,7 +194,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Deletes a Docker image
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -218,26 +202,19 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function deleteImage($params, $context)
     {
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"id": { "type" : "string" }' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker rmi " . $params['id'];
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.deleteimage");
+
+        $cmd = sprintf("docker rmi %s", $params['id']);
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Searches the Docker Hub for a specific repository
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -245,22 +222,17 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function searchImages($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $objects = array();
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $url = "http://localhost:" . $settings['apiPort'] .
-            "/images/search?term=" . $params["name"];
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get("conf.service.docker");
+
+        $objects = [];
+        $url = sprintf("http://localhost:%s/images/search?term=%s",
+            $settings->get('apiPort'), $params["name"]
+        );
         $response = OMVModuleDockerUtil::doApiCall($url);
         $data = json_decode($response);
 
@@ -269,22 +241,22 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             case "all":
                 array_push(
                     $objects,
-                    array(
+                    [
                         "name" => $repo->name,
                         "description" => $repo->description,
                         "stars" => $repo->star_count
-                    )
+                    ]
                 );
                 break;
             case "trusted":
                 if ($repo->is_trusted) {
                     array_push(
                         $objects,
-                        array(
+                        [
                             "name" => $repo->name,
                             "description" => $repo->description,
                             "stars" => $repo->star_count
-                        )
+                        ]
                     );
                 }
                 break;
@@ -292,11 +264,11 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 if ($repo->is_official) {
                     array_push(
                         $objects,
-                        array(
+                        [
                             "name" => $repo->name,
                             "description" => $repo->description,
                             "stars" => $repo->star_count
-                        )
+                        ]
                     );
                 }
                 break;
@@ -304,33 +276,32 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 if ($repo->is_official && $repo->is_trusted) {
                     array_push(
                         $objects,
-                        array(
+                        [
                             "name" => $repo->name,
                             "description" => $repo->description,
                             "stars" => $repo->star_count
-                        )
+                        ]
                     );
                 }
                 break;
             default:
                 array_push(
                     $objects,
-                    array(
+                    [
                         "name" => $repo->name,
                         "description" => $repo->description,
                         "stars" => $repo->star_count
-                    )
+                    ]
                 );
                 break;
             }
-
         }
         return $objects;
     }
 
     /**
      * Get data of specific Image
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -338,22 +309,16 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getImageData($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-        
-        $image = OMVModuleDockerUtil::getImage($params['id'], $settings['apiPort']);
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $object = array(
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get("conf.service.docker");
+
+        $image = OMVModuleDockerUtil::getImage($params['id'], $settings->get('apiPort'));
+
+        $object = [
             "repository" => rtrim(ltrim($image->getRepository(), "<"), ">"),
             "tag" => rtrim(ltrim($image->getTag(), "<"), ">"),
             "id" => $image->getId(),
@@ -362,13 +327,13 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             "ports" => $image->getPorts(),
             "envvars" => $image->getEnvVars(),
             "imagevolumes" => $image->getVolumes()
-        );
+        ];
         return $object;
     }
 
     /**
      * Get all Docker containers
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -376,25 +341,18 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getContainers($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $objects = array();
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get("conf.service.docker");
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        $objects = [];
 
-        if ($settings['enabled']) {
+        if ($settings->get('enabled')) {
             $objects = OMVModuleDockerUtil::getContainerList(
-                $settings['apiPort']
+                $settings->get('apiPort')
             );
         }
         return $objects;
@@ -402,7 +360,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Run a single Docker container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -410,10 +368,8 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function runContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
         $cmd = "docker run -d ";
 
@@ -521,7 +477,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Modify a single Docker container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -529,22 +485,14 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function modifyContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        global $xmlConfig;
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get("conf.service.docker");
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-
-        $container = OMVModuleDockerUtil::getContainer($params['cid'], $settings['apiPort']);
+        $container = OMVModuleDockerUtil::getContainer($params['cid'], $settings->get('apiPort'));
         $image = OMVModuleDockerUtil::getImage(
             substr($container->getImageId(), 0, 12),
             $apiPort
@@ -554,7 +502,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         if (strcmp($container->getRestartPolicy(), "always") === 0) {
             $restart = true;
         }
-        $portForwards = array();
+        $portForwards = [];
         foreach ($container->getPortBindings() as $binding) {
             $customPort = "";
             $exposedPort = "";
@@ -568,37 +516,37 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 $customPort = explode("/", $binding['containerportstring'])[0];
             }
             array_push($portForwards,
-                array(
+                [
                     "customPort" => $customPort,
                     "exposedPort" => $exposedPort,
                     "hostip" => $binding['hostip'],
                     "hostport" => $binding['hostport'],
                     "proto" => $binding['proto']
-                )
+                ]
             );
 
         }
-        $envVars = array();
+        $envVars = [];
         foreach ($container->getEnvironmentVariables() as $key => $value) {
             array_push($envVars,
-                array(
+                [
                     "name" => $key,
                     "value" => $value
-                )
+                ]
             );
         }
-        $bindMounts = array();
+        $bindMounts = [];
         foreach($container->getBindMounts() as $mount) {
-            array_push($bindMounts, 
-                array(
+            array_push($bindMounts,
+                [
                     "from" => $mount['from'],
                     "to" => $mount['to'],
                     "romode" => $mount['mode']
-                )
+                ]
             );
         }
 
-        $old_params = array(
+        $old_params = [
             "restart" => $restart,
             "privileged" => $container->getPrivileged(),
             "timeSync" => $container->syncsTime(),
@@ -610,7 +558,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             "volumes" => $container->getVolumesFrom(),
             "containerName" => $container->getName(),
             "image" => $container->getImage()
-        );
+        ];
 
         //Remove existing container
         $cmd = "docker stop " . $params['cid'] . " && docker rm " . $params['cid'];
@@ -627,13 +575,13 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         } catch (OMVModuleDockerException $e) {
             $this->runContainer($old_params, $context);
             $e_str = explode("'", (string)$e);
-            return (array("response" => $e_str[3]));
+            return (["response" => $e_str[3]]);
         }
     }
 
     /**
      * Start one or multiple Docker containers
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -641,17 +589,16 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function startContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $cmd = "docker start " . $params['id'] . " 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Stop one or multiple Docker containers
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -659,17 +606,16 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function stopContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $cmd = "docker stop " . $params['id'] . " 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Restart one or multiple Docker containers
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -677,17 +623,16 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function restartContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $cmd = "docker restart " . $params['id'] . " 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Delete one or multiple Docker containers
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -695,26 +640,19 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function deleteContainer($params, $context)
     {
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"id": { "type" : "string" }' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.deleteimage");
+
         $cmd = "docker rm " . $params['id'] . " 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Create a new Docker container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -722,10 +660,9 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function createContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $cmd = "docker create ";
 
         //Check for bind mounts
@@ -759,7 +696,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Get all containers with volumes mounted
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -767,27 +704,22 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getVolumesFrom($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $objects = array();
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        if ($settings['enabled']) {
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
+
+        $objects = [];
+
+        if ($settings->get('enabled')) {
             $containers = OMVModuleDockerUtil::getContainers(
-                $settings['apiPort']
+                $settings->get('apiPort')
             );
             foreach ($containers as $container) {
                 if ($container['hasmounts']) {
-                    array_push($objects, array("name" => $container['name']));
+                    array_push($objects, ["name" => $container['name']]);
                 }
             }
         }
@@ -796,7 +728,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Commit a container to a new image
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -804,17 +736,16 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function commitContainer($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $cmd = "docker commit " . $params['name'] . " " . $params['newImage'] . " 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
     }
 
     /**
      * Check if a warning should be displayed when modifying a container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -822,22 +753,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function modifyWarningEnabled($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        global $xmlConfig;
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-        if ($settings["cwarn"]) {
-            return array("response" => "true");
+        if ($settings-get('cwarn')) {
+            return ["response" => "true"];
         } else {
             return null;
         }
@@ -845,7 +769,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Refresh all containers based on a specific image
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -853,29 +777,22 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function refreshContainers($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        global $xmlConfig;
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
         $image = $params['image'];
-        $containers = OMVModuleDockerUtil::getContainers($settings['apiPort']);
+        $containers = OMVModuleDockerUtil::getContainers($settings->get('apiPort'));
 
         foreach ($containers as $c) {
             if (strcmp($c['image'], $image) === 0) {
-                $new_params = array(
+                $new_params = [
                     "cid" => $c['id'],
                     "refresh" => true
-                );
+                ];
                 $this->modifyContainer($new_params, $context);
             }
         }
@@ -883,7 +800,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Get data of a single container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -891,21 +808,14 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getContainerData($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        global $xmlConfig;
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-        $container = OMVModuleDockerUtil::getContainer($params['id'], $settings['apiPort']);
+        $container = OMVModuleDockerUtil::getContainer($params['id'], $settings->get('apiPort'));
         $ports = "";
         foreach ($container->getPorts() as $exposedport => $hostports) {
             if ($hostports) {
@@ -921,10 +831,10 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         $ports = rtrim($ports, ", ");
         $image = OMVModuleDockerUtil::getImage(
             substr($container->getImageId(), 0, 12),
-            $settings['apiPort']
+            $settings->get('apiPort')
         );
 
-        $object = array(
+        $object = [
             "id" => $container->getId(),
             "image" => $container->getImage(),
             "command" => $container->getCommand(),
@@ -946,13 +856,13 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             "hostname" => $container->getHostName(),
             "timesync" => $container->syncsTime(),
             "imagevolumes" => $image->getVolumes()
-        );
+        ];
         return $object;
     }
 
     /**
      * Retrieve all plugin settings
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -960,11 +870,12 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getSettings($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
         $dockerVersion = "0";
         $dockerVersionInfo = "";
@@ -980,29 +891,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             OMVUtil::exec($cmd, $out, $res);
             $dockerVersionInfo = implode("\n", $out);
         }
-        $object = $xmlConfig->get($this->_getXpath());
-        if (is_null($object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-
-        //$object["showDanglingImages"] = boolval(
-        //$object["showDanglingImages"]);
-        $object["enabled"] = boolval($object["enabled"]);
-        $object["apiPort"] = intval($object["apiPort"]);
-        $object["version"] = $dockerVersion;
-        $object["versionInfo"] = $dockerVersionInfo;
-        $object["sharedfolderref"] = $object["sharedfolderref"];
-        $object["cwarn"] = boolval($object["cwarn"]);
+        $object->set('version', $dockerVersion);
+        $object->set('versionInfo', $dockerVersionInfo);
 
         return $object;
     }
 
     /**
      * Set all plugin settings
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1010,27 +907,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function setSettings($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"enabled": {	"type": "boolean" },' .
-            '"versionInfo": {	"type": "string" },' .
-            '"version": {	"type": "string" },' .
-            '"apiPort": { "type": "integer" },' .
-            '"sharedfolderref": { "type": "string" },' .
-            '"uuid": { "type": "string" },' .
-            '"orgpath": { "type": "string" },' .
-            '"destpath": { "type": "string" },' .
-            '"cwarn": { "type": "boolean"}' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.setsettings");
+
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
 
         //Create the folder used for bind mounting when relocating
         //the base path
@@ -1038,17 +923,9 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         OMVModuleDockerUtil::exec($cmd, $out, $res);
         unset($out);
 
-        //Get the old settings object
-        $oldSettings = $xmlConfig->get($this->_getXpath());
-        if (is_null($oldSettings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        $newApiPort = $settings->get('apiPort');
+        $sharedFolder = $settings->get('sharedfolderref');
 
-        $newApiPort = $oldSettings['apiPort'];
-        $sharedFolder = $oldSettings['sharedfolderref'];
         //Make sure that the plugin is enabled to avoid unnecessary restarts of
         //the docker service.
         if ($params['enabled']) {
@@ -1059,9 +936,9 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 $absPath = OMVRpc::exec(
                     "ShareMgmt",
                     "getPath",
-                    array(
+                    [
                         "uuid" => $params['sharedfolderref']
-                    ),
+                    ],
                     $context
                 );
                 $sharedFolder = $params['sharedfolderref'];
@@ -1070,49 +947,35 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         }
 
         //Get the possibly changed settings object
-        $oldSettings = $xmlConfig->get($this->_getXpath());
-        if (is_null($oldSettings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        $settings = $db->get('conf.service.docker');
 
-        if (isset($oldSettings['dockermntent'])) {
-            $tmpMntent = $oldSettings['dockermntent'];
+        if (isset($settings->get('dockermntent'))) {
+            $tmpMntent = $settings->get('dockermntent');
         } else {
             $tmpMntent = "";
         }
 
         // Update the configuration object.
-        $object = array(
-            "dockermntent" => $tmpMntent,
-            "enabled" => array_boolval($params, "enabled"),
-            "apiPort" => $newApiPort,
-            "sharedfolderref" => $sharedFolder,
-            "cwarn" => array_boolval($params, "cwarn")
-        );
+        $settings->setAssoc($params);
+        $settings->set('dockermntent', $tmpMntent);
+        $settings->set('apiPort', $newApiPort);
+        $settings->set('sharedfolderref', $sharedFolder);
+        $db->set($settings);
 
-        if (false === $xmlConfig->replace($this->_getXpath(), $object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_SET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
-
-        $dispatcher = &OMVNotifyDispatcher::getInstance();
+        // Notify configuration changes.
+        $dispatcher = \OMV\Engine\Notify\Dispatcher::getInstance();
         $dispatcher->notify(
             OMV_NOTIFY_MODIFY,
-            $this->_getEventMessagePath(),
-            $object
+            "org.openmediavault.system.resetperms",
+            $settings->getAssoc()
         );
-
-        return $object;
+        // Return the configuration object.
+        return $settings->getAssoc();
     }
 
     /**
      * Get detailed info on a Docker image or container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1120,18 +983,18 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getDetails($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker inspect " . $params['id'] . " 2>&1";
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        $cmd = sprintf("docker inspect %s 2>&1", $params['id']);
         OMVModuleDockerUtil::exec($cmd, $out, $res);
-        return array("details" => implode("\n\r", $out));
+
+        return ["details" => implode("\n\r", $out)];
     }
 
     /**
      * Get logs from a Docker container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1139,18 +1002,17 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getLogs($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker logs " . $params['id'] . " 2>&1";
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        $cmd = sprintf("docker logs %s 2>&1", $params['id']);
         OMVModuleDockerUtil::exec($cmd, $out, $res);
-        return array("logs" => implode("\n\r", $out));
+        return ["logs" => implode("\n\r", $out)];
     }
 
     /**
      * Get folder structure for folder browser
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1158,20 +1020,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getRootFolders($params, $context)
     {
-        global $xmlConfig;
-
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR)
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
         // List the directory contents.
-        $result = array();
+        $result = [];
         $path = sprintf("/%s", rtrim($params['path'], "/"));
         if (strlen($path) == 0) {
             $path = "/";
         }
-
         foreach (new DirectoryIterator($path) as $item) {
             if ($item->isDot()) {
                 continue;
@@ -1186,7 +1043,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Copy Docker data from one folder to another
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1194,20 +1051,14 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function copyDockerData($params, $context)
     {
-        global $xmlConfig;
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"srcpath": {	"type": "string" },' .
-            '"sharedfolderref": {	"type": "string" }' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.copydockerdata");
+
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
 
         $absPath = "";
         if ($params['sharedfolderref']) {
@@ -1255,11 +1106,11 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                     "outputfilename",
                     $bgOutputFilename
                 );
-                $cmd = "cp -R $srcpath/* $destpath";
+                $cmd = sprintf("cp -R %s/* %s", $srcpath, $destpath);
                 $this->exec($cmd, $output, $bgOutputFilename);
                 $this->finalizeBgProcStatus($bgStatusFilename, $output);
 
-            } catch(Exception $e) {
+            } catch(\Exception $e) {
                 $this->finalizeBgProcStatus($bgStatusFilename, "", $e);
                 exit(1);
             }
@@ -1274,7 +1125,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Execute command inside running Docker container
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1282,19 +1133,14 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function executeCommand($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $this->validateMethodParams(
-            $params, 
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"cmd": { "type" : "string" },' .
-            '"containerId": { "type" : "string" }' .
-            '}}'
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.executecommand");
+
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
 
         // Create a background process.
         $bgStatusFilename = $this->createBgProcStatus();
@@ -1312,12 +1158,12 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 "outputfilename",
                 $bgOutputFilename
             );
-            $cmd = "docker exec -t " . $params['containerId'] . " " .
-                $params['cmd'];
+            $cmd = sprintf("docker exec -t %s %s",
+                $params['containerId'], $params['cmd']
+            );
             $this->exec($cmd, $output, $bgOutputFilename);
             $this->finalizeBgProcStatus($bgStatusFilename, $output);
-
-        } catch(Exception $e) {
+        } catch(\Exception $e) {
             $this->finalizeBgProcStatus($bgStatusFilename, "", $e);
             exit(1);
         }
@@ -1325,7 +1171,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Retrieve Docker logos from various sources
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1333,16 +1179,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function syncDockerLogos($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR )
-        );
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
+
         $logoPath = "/var/www/openmediavault/images/dockerrepo/";
         $cmd = "mkdir -p $logoPath";
         OMVUtil::exec($cmd, $out, $res);
 
         //First populate with logos from OMV repo
-        $baseUrl = "http://openmediavault-plugin-developers.github.io/" . 
+        $baseUrl = "http://openmediavault-plugin-developers.github.io/" .
             "openmediavault-docker-repo/";
         $imgBase = $baseUrl . "logos/";
         $repoUrl = $baseUrl . "dockerlist.xml";
@@ -1388,7 +1233,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
 
     /**
      * Retrieve list of Docker repos from Github source
-     * 
+     *
      * @param array  $params  An associative array with all RPC call parameters
      * @param string $context The context of the user maing the RPC call
      *
@@ -1396,41 +1241,37 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
      */
     public function getDockerRepo($params, $context)
     {
-        $this->validateMethodContext(
-            $context,
-            array( "role" => OMV_ROLE_ADMINISTRATOR )
-        );
-        global $xmlConfig;
+        // Validate the RPC caller context.
+        $this->validateMethodContext($context, ["role" => OMV_ROLE_ADMINISTRATOR]);
 
-        $settings = $xmlConfig->get($this->_getXpath());
-        if (is_null($settings)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->_getXpath()
-            );
-        }
+        // Validate the parameters of the RPC service method.
+        $this->validateMethodParams($params, "rpc.docker.executecommand");
 
-        $pulledImages = array();
+        // Get the configuration object.
+        $db = \OMV\Config\Database::getInstance();
+        $settings = $db->get('conf.service.docker');
+
+        $pulledImages = [];
         $cmd = "docker images 2>&1";
         OMVModuleDockerUtil::exec($cmd, $out, $res);
         for ($i = 1; $i < count($out); $i++) {
             preg_match('/^([\S]+)\s+\S+\s+([\S]+).*$/', $out[$i], $matches);
             $imgName = $matches[1];
             $pulledImages[trim($imgName)] = $matches[2];
-        }        
+        }
         $logoPath = "/var/www/openmediavault/images/dockerrepo/";
         $cmd = "mkdir -p $logoPath";
         OMVUtil::exec($cmd, $out, $res);
 
         //First populate with images from OMV repo
-        $baseUrl = "http://openmediavault-plugin-developers.github.io/" . 
+        $baseUrl = "http://openmediavault-plugin-developers.github.io/" .
             "openmediavault-docker-repo/";
         $imgBase = $baseUrl . "logos/";
         $repoUrl = $baseUrl . "dockerlist.xml";
         $data = file_get_contents($repoUrl);
         $xml = simplexml_load_string($data);
-        $objects = array();
-        foreach ($xml as $image) {        
+        $objects = [];
+        foreach ($xml as $image) {
             //Use blank logo if no logo is found
             $logo = "";
             if (file_exists($logoPath . $image->imageurl)) {
@@ -1440,18 +1281,19 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
             if ((strlen($image->name) === 0) || (strlen($image->desc) === 0) || (strlen($image->category) === 0) || (strlen($image->repo) === 0)) {
                 continue;
             } else {
-                $ports_ary = array();
+                $ports_ary = [];
                 $pulled = false;
                 $imgRepo = trim((string)$image->repo);
                 if (isset($pulledImages[$imgRepo])) {
                     $pulled = true;
                     $image_obj = OMVModuleDockerUtil::getImage(
                         $pulledImages[$imgRepo],
-                        $settings['apiPort']
+                        $settings->get('apiPort')
                     );
                     $ports_ary = $image_obj->getPorts();
                 }
-                $temp = array("name" => $image->name,
+                $temp = [
+                    "name" => $image->name,
                     "category" => $image->category,
                     "logo" => $logo,
                     "desc" => $image->desc,
@@ -1460,13 +1302,13 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                     "timesync" => true,
                     "restartpolicy" => "always",
                     "privileged" => false,
-                    "cenvvars" => array(),
-                    "envvars" => array(),
+                    "cenvvars" => [],
+                    "envvars" => [],
                     "ports" => $ports_ary,
-                    "portbindings" => array(),
+                    "portbindings" => [],
                     "extraargs" => "",
                     "isupdated" => false
-                );
+                ];
                 array_push($objects, $temp);
             }
         }
@@ -1477,9 +1319,8 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
         $json = file_get_contents($url);
         $data = json_decode($json);
         foreach ($data->applist as $image) {
-
-            $cenv_ary = array();
-            $ports_ary = array();
+            $cenv_ary = [];
+            $ports_ary = [];
             $pulled = false;
             $updated = false;
             $imgRepo = trim((string)$image->Repository);
@@ -1487,7 +1328,7 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 $pulled = true;
                 $image_obj = OMVModuleDockerUtil::getImage(
                     $pulledImages[$imgRepo],
-                    $settings['apiPort']
+                    $settings->get('apiPort')
                 );
                 $ports_ary = $image_obj->getPorts();
                 $local_time = (int)date("U", $image_obj->getTimestamp());
@@ -1509,23 +1350,23 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                     (strcmp(trim((string)$cenvvar->Name), "PGID") === 0)) {
                     continue;
                 }
-                $cenv_ary[$cenvvar->Name] = $cenvvar->Value; 
+                $cenv_ary[$cenvvar->Name] = $cenvvar->Value;
             }
             $cenv_ary["PUID"] = 65534;
             $cenv_ary["PGID"] = 65534;
             $nw_mode = ucfirst(trim((string)$image->Networking->Mode));
-            $port_bindings = array();
+            $port_bindings = [];
             if (strcmp($nw_mode, "Bridge") === 0) {
                 foreach ($image->Networking->Publish[0]->Port as $port) {
                     array_push(
                         $port_bindings,
-                        array(
+                        [
                             "containerportstring" => trim((string)$port->ContainerPort) . "/" . trim((string)$port->Protocol),
                             "containerportnr" => trim((string)$port->ContainerPort),
                             "hostip" => "0.0.0.0",
                             "hostport" => trim((string)$port->HostPort),
                             "proto" => "Select"
-                        ));
+                        ]);
 
                 }
             }
@@ -1556,7 +1397,8 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 $desc = trim((string)$image->Overview);
             }
 
-            $temp = array("name" => trim((string)$image->Name),
+            $temp = [
+                "name" => trim((string)$image->Name),
                 "category" => $categories,
                 "logo" => $logo,
                 "desc" => $desc,
@@ -1566,22 +1408,15 @@ class OMVRpcServiceDocker extends OMVRpcServiceAbstract
                 "restartpolicy" => "always",
                 "privileged" => $privileged,
                 "cenvvars" => $cenv_ary,
-                "envvars" => array(),
+                "envvars" => [],
                 "ports" => $ports_ary,
                 "networkmode" => $nw_mode,
                 "portbindings" => $port_bindings,
                 "extraargs" => $extraargs,
                 "isupdated" => $updated
-            );
+            ];
             array_push($objects, $temp);
         }
-
         return $objects;
     }
-
-    //throw new OMVModuleDockerException($cmd);
 }
-
-// Register the RPC service.
-$rpcServiceMgr = &OMVRpcServiceMgr::getInstance();
-$rpcServiceMgr->registerService(new OMVRpcServiceDocker());

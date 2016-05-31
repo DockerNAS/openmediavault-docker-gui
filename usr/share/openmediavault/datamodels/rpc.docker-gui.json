@@ -1,0 +1,110 @@
+[{
+	"type": "rpc",
+	"id": "rpc.docker.pullimage",
+	"params": {
+		"type": "object",
+		"properties": {
+			"repository": {
+				"type": "string",
+				"required": true
+			},
+			"tag": {
+				"type": "string",
+				"required": true
+			}
+		}
+	}
+},{
+	"type": "rpc",
+	"id": "rpc.docker.deleteimage",
+	"params": {
+		"type": "object",
+		"properties": {
+			"id": {
+				"type": "string",
+				"required": true
+			}
+		}
+	}
+},{
+	"type": "rpc",
+	"id": "rpc.docker.setsettings",
+	"params": {
+		"type": "object",
+		"properties": {
+			"enabled": {
+				"type": "boolean",
+				"required": true
+			},
+			"versioninfo": {
+				"type": "string",
+				"required": true
+			},
+			"version": {
+				"type": "string",
+				"required": true
+			},
+			"apiport": {
+				"type": "integer",
+				"minimum": 1,
+				"maximum": 65535,
+				"required": true
+			},
+			"sharedfolderref": {
+				"type": "string",
+				"format": "uuidv4",
+				"required": true
+			},
+			"uuid": {
+				"type": "string",
+				"format": "uuidv4",
+				"required": true
+			},
+			"orgpath": {
+				"type": "string",
+				"required": true
+			},
+			"destpath": {
+				"type": "string",
+				"required": true
+			},
+			"cwarn": {
+				"type": "boolean",
+				"required": true
+			}
+		}
+	}
+},{
+	"type": "rpc",
+	"id": "rpc.docker.copydockerdata",
+	"params": {
+		"type": "object",
+		"properties": {
+			"srcpath": {
+				"type": "string",
+				"required": true
+			},
+			"sharedfolderref": {
+				"type": "string",
+				"format": "uuidv4",                
+				"required": true
+			}
+		}
+	}
+},{
+	"type": "rpc",
+	"id": "rpc.docker.executecommand",
+	"params": {
+		"type": "object",
+		"properties": {
+			"cmd": {
+				"type": "string",
+				"required": true
+			},
+			"containerid": {
+				"type": "string",
+				"required": true
+			}
+		}
+	}
+}]

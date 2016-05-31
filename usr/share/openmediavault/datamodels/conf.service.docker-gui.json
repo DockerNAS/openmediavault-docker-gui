@@ -1,0 +1,38 @@
+{
+	"type": "config",
+	"id": "conf.service.docker",
+	"title": "docker",
+	"queryinfo": {
+		"xpath": "/config/services/docker",
+		"iterable": true,
+		"idproperty": "uuid"
+	},
+	"properties": {
+        "apiport": {
+			"type": "integer",
+			"minimum": 1,
+			"maximum": 65535,
+			"default": 42005
+		},
+        "sharedfolderref": {
+            "type": "string",
+            "format": "uuidv4"
+        },        
+		"enabled": {
+			"type": "boolean",
+			"default": false
+		},
+		"dockermntent": {
+			"type": "string",
+			"default": ""
+		},
+		"cwarn": {
+			"type": "integer",
+			"default": 1
+		},
+		"showDanglingImages": {
+			"type": "boolean",
+			"default": false
+		}        
+	}
+}
